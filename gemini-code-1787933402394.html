@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Coffee Shop - Offline Order Management System</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              bg: '#f5efe6',
+              sidebar: '#3d231d',
+              accent: '#4a2e2b',
+              accentHover: '#331d1a',
+              cardBg: '#ffffff',
+              cardBorder: '#eae3d9',
+              mutedBg: '#e8dfd5',
+              pill: '#e8ded2',
+              pillActive: '#4a2e2b',
+              grayText: '#7d7268',
+              badgeGreen: '#d1fae5',
+              badgeGreenText: '#065f46'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @media print {
+      body * { visibility: hidden; }
+      #receipt-modal-content, #receipt-modal-content * { visibility: visible; }
+      #receipt-modal-content { position: absolute; left: 0; top: 0; width: 100%; }
+      .no-print { display: none !important; }
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: #d5c9bc; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-brand-bg text-gray-800 h-screen font-sans antialiased overflow-hidden">
+
+  <div class="flex h-full">
+    <div class="w-16 bg-brand-bg flex flex-col items-center py-4 space-y-5 flex-shrink-0 border-r border-brand-cardBorder">
+      <button onclick="switchTab('pos')" title="Order Management" class="w-10 h-10 rounded-xl bg-brand-accent text-white flex items-center justify-center shadow-sm">
+        ☕
+      </button>
+      <button onclick="switchTab('pos')" title="Cart Register" class="w-10 h-10 rounded-xl hover:bg-brand-pill text-brand-accent flex items-center justify-center">
+        🛒
+      </button>
+      <button onclick="switchTab('inventory')" title="Inventory" class="w-10 h-10 rounded-xl hover:bg-brand-pill text-brand-accent flex items-center justify-center">
+        📦
+      </button>
+      <button onclick="switchTab('products')" title="Products" class="w-10 h-10 rounded-xl hover:bg-brand-pill text-brand-accent flex items-center justify-center">
+        🧪
+      </button>
+      <button onclick="switchTab('history')" title="Sales History" class="w-10 h-10 rounded-xl hover:bg-brand-pill text-brand-accent flex items-center justify-center">
+        🕒
+      </button>
+      <button onclick="switchTab('analytics')" title="Sales Analytics" class="w-10 h-10 rounded-xl hover:bg-brand-pill text-brand-accent flex items-center justify-center">
+        📊
+      </button>
+      <button onclick="switchTab('employees')" title="Employees" class="w-10 h-10 rounded-xl hover:bg-brand-pill text-brand-accent flex items-center justify-center">
+        👥
+      </button>
+      <button onclick="switchTab('settings')" title="Store Settings" class="w-10 h-10 rounded-xl hover:bg-brand-pill text-brand-accent flex items-center justify-center mt-auto">
+        ⚙️
+      </button>
+    </div>
+
+    <div class="flex-1 flex overflow-hidden">
+      
+      <div id="view-pos" class="flex-1 flex p-6 gap-6 overflow-hidden">
+        
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <div class="flex justify-between items-start mb-4">
+            <div class="flex items-center gap-3">
+              <div id="shop-logo-container" class="w-10 h-10 rounded-xl bg-brand-accent flex items-center justify-center text-white font-bold overflow-hidden shadow-sm">
+                ☕
+              </div>
+              <div>
+                <h1 class="text-2xl font-bold text-gray-900" id="header-shop-name">My Coffee Shop</h1>
+                <p class="text-xs text-brand-grayText font-medium mt-0.5">Offline Order Management System</p>
+              </div>
+            </div>
+            <div class="relative w-72">
+              <input type="text" id="search-input" oninput="handleSearch()" placeholder="Search items..." class="w-full bg-brand-mutedBg text-xs rounded-full py-2.5 pl-9 pr-4 text-gray-800 placeholder-brand-grayText border-none focus:ring-2 focus:ring-brand-accent outline-none">
+              <span class="absolute left-3.5 top-2.5 text-brand-grayText text-xs">🔍</span>
+            </div>
+          </div>
+
+          <div id="category-bar" class="flex space-x-2 mb-5 overflow-x-auto pb-1"></div>
+
+          <div class="p-1 overflow-y-auto flex-1 grid grid-cols-3 gap-4" id="item-grid"></div>
+        </div>
+
+        <div class="w-80 bg-white rounded-2xl p-5 border border-brand-cardBorder shadow-sm flex flex-col flex-shrink-0">
+          <div class="flex justify-between items-center mb-1">
+            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+              <span>🛒</span> Order Summary
+            </h2>
+          </div>
+          <div class="flex justify-between text-xs text-brand-grayText mb-4">
+            <span id="live-time">00:00 AM</span>
+            <span>Cashier: <strong id="active-cashier-label" class="text-gray-800">Admin</strong></span>
+          </div>
+
+          <div class="flex-1 overflow-y-auto space-y-2 mb-4 pr-1" id="cart-list"></div>
+
+          <div class="mb-3 pt-2 border-t border-gray-100">
+            <label class="block text-[11px] font-bold text-brand-grayText mb-1.5">Payment Method</label>
+            <div id="payment-options-container" class="grid grid-cols-3 gap-1.5"></div>
+          </div>
+
+          <div class="border-t border-gray-100 pt-3 space-y-2">
+            <div class="flex justify-between text-xs text-brand-grayText font-medium">
+              <span>Subtotal</span>
+              <span id="subtotal" class="font-bold text-gray-800">₱0.00</span>
+            </div>
+            <div class="flex justify-between text-base font-bold text-gray-900 pt-1">
+              <span>Total</span>
+              <span id="total" class="text-lg">₱0.00</span>
+            </div>
+
+            <div class="pt-2">
+              <button onclick="checkout()" id="btn-process" class="w-full bg-brand-mutedBg text-brand-grayText font-bold py-3 rounded-xl transition text-xs shadow-none cursor-not-allowed" disabled>
+                Process Transaction
+              </button>
+            </div>
+
+            <button onclick="clearCart()" class="w-full bg-brand-pill text-brand-accent font-semibold py-2.5 rounded-xl text-xs hover:bg-brand-mutedBg transition">
+              Clear Order
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <div id="view-history" class="hidden flex-1 p-6 overflow-y-auto">
+        <div class="flex justify-between items-start mb-5">
+          <div>
+            <h1 class="text-2xl font-bold text-gray-900">Sales History</h1>
+            <p class="text-xs text-brand-grayText font-medium mt-0.5">Completed order log saved offline</p>
+          </div>
+          <button onclick="clearAllTransactions()" class="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-4 py-2.5 rounded-xl font-bold text-xs transition">
+            Clear Transactions
+          </button>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-brand-cardBorder overflow-hidden shadow-sm">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-gray-100 text-[11px] font-bold text-brand-grayText uppercase bg-gray-50/50">
+                <th class="p-3.5 pl-5">Transaction #</th>
+                <th class="p-3.5">Cashier</th>
+                <th class="p-3.5">Items</th>
+                <th class="p-3.5">Total</th>
+                <th class="p-3.5">Payment</th>
+                <th class="p-3.5">Status</th>
+                <th class="p-3.5">Sale Date</th>
+                <th class="p-3.5 pr-5">Action</th>
+              </tr>
+            </thead>
+            <tbody id="history-table" class="divide-y divide-gray-100 text-xs"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="view-inventory" class="hidden flex-1 p-6 overflow-y-auto">
+        <h1 class="text-2xl font-bold text-gray-900 mb-1">Inventory Management</h1>
+        <p class="text-xs text-brand-grayText mb-5">Track raw ingredients and stock levels offline</p>
+        <div class="grid grid-cols-3 gap-5">
+          <div class="bg-white p-5 rounded-2xl border border-brand-cardBorder h-fit space-y-3">
+            <h3 class="font-bold text-sm text-gray-800">Add Inventory Item</h3>
+            <input type="text" id="new-inv-name" placeholder="Item Name (e.g. Milk)" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+            <input type="number" id="new-inv-stock" placeholder="Initial Stock Quantity" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+            <input type="text" id="new-inv-unit" placeholder="Unit (e.g. kg, Liters, pcs)" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+            <button onclick="addInventoryItem()" class="w-full bg-brand-accent text-white py-2.5 rounded-xl font-bold text-xs hover:bg-brand-accentHover transition">Save Inventory</button>
+          </div>
+          <div class="col-span-2 bg-white rounded-2xl border border-brand-cardBorder p-5">
+            <table class="w-full text-left">
+              <thead>
+                <tr class="border-b text-brand-grayText text-xs">
+                  <th class="pb-3">Ingredient / Item</th>
+                  <th class="pb-3">Stock Quantity</th>
+                  <th class="pb-3">Unit</th>
+                  <th class="pb-3">Status</th>
+                  <th class="pb-3">Action</th>
+                </tr>
+              </thead>
+              <tbody id="inventory-table" class="divide-y text-xs"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-products" class="hidden flex-1 p-6 overflow-y-auto">
+        <h1 class="text-2xl font-bold text-gray-900 mb-1">Custom Products & Prices</h1>
+        <p class="text-xs text-brand-grayText mb-5">Manage menu items, prices, logos, and custom features offline</p>
+        <div class="grid grid-cols-3 gap-5">
+          <div class="bg-white p-5 rounded-2xl border border-brand-cardBorder h-fit space-y-3">
+            <h3 class="font-bold text-sm text-gray-800">Add Custom Product</h3>
+            <input type="text" id="new-prod-name" placeholder="Product Name" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+            <input type="number" id="new-prod-price" placeholder="Price (₱)" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+            <input type="text" id="new-prod-cat" placeholder="Category (e.g. Coffee, Pastry)" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+            <input type="number" id="new-prod-stock" placeholder="Available Quantity" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+            <input type="text" id="new-prod-features" placeholder="Features / Options (e.g. Less Ice, Extra Shot)" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+            <div>
+              <label class="block text-[11px] font-semibold text-brand-grayText mb-1">Product Logo / Image</label>
+              <input type="file" id="new-prod-logo" accept="image/*" class="w-full text-xs text-brand-grayText">
+            </div>
+            <button onclick="addProduct()" class="w-full bg-brand-accent text-white py-2.5 rounded-xl font-bold text-xs hover:bg-brand-accentHover transition">Save Product</button>
+          </div>
+          <div class="col-span-2 bg-white rounded-2xl border border-brand-cardBorder p-5">
+            <table class="w-full text-left">
+              <thead>
+                <tr class="border-b text-brand-grayText text-xs">
+                  <th class="pb-3">Product</th>
+                  <th class="pb-3">Category</th>
+                  <th class="pb-3">Price</th>
+                  <th class="pb-3">Stock</th>
+                  <th class="pb-3">Features</th>
+                  <th class="pb-3">Action</th>
+                </tr>
+              </thead>
+              <tbody id="products-table" class="divide-y text-xs"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-analytics" class="hidden flex-1 p-6 overflow-y-auto">
+        <div class="flex justify-between items-center mb-5">
+          <div>
+            <h1 class="text-2xl font-bold text-gray-900">Sales Reports & Analytics</h1>
+            <p class="text-xs text-brand-grayText">Business performance overview</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="exportToExcel()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-emerald-800 transition">
+              📥 Export Reports (.xlsx)
+            </button>
+            <button onclick="backupAllData()" class="bg-brand-accent text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-brand-accentHover transition">
+              💾 Export Offline Backup (.json)
+            </button>
+            <label class="bg-gray-700 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-gray-800 transition cursor-pointer flex items-center">
+              📂 Restore Backup
+              <input type="file" id="restore-backup-file" accept=".json" onchange="restoreAllData(event)" class="hidden">
+            </label>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-5 mb-5">
+          <div class="bg-white p-5 rounded-2xl border border-brand-cardBorder">
+            <span class="text-brand-grayText text-xs font-semibold">Total Revenue</span>
+            <div class="text-2xl font-bold text-brand-accent mt-1" id="stat-total-revenue">₱0.00</div>
+          </div>
+          <div class="bg-white p-5 rounded-2xl border border-brand-cardBorder">
+            <span class="text-brand-grayText text-xs font-semibold">Total Orders Processed</span>
+            <div class="text-2xl font-bold text-gray-800 mt-1" id="stat-total-orders">0</div>
+          </div>
+          <div class="bg-white p-5 rounded-2xl border border-brand-cardBorder">
+            <span class="text-brand-grayText text-xs font-semibold">Average Order Value</span>
+            <div class="text-2xl font-bold text-gray-800 mt-1" id="stat-avg-order">₱0.00</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-employees" class="hidden flex-1 p-6 overflow-y-auto">
+        <h1 class="text-2xl font-bold text-gray-900 mb-1">Custom Employee Management</h1>
+        <p class="text-xs text-brand-grayText mb-5">Manage cashier accounts and active staff offline</p>
+        <div class="grid grid-cols-3 gap-5">
+          <div class="bg-white p-5 rounded-2xl border border-brand-cardBorder h-fit space-y-3">
+            <h3 class="font-bold text-sm text-gray-800">Add Employee</h3>
+            <input type="text" id="new-emp-name" placeholder="Full Name" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+            <input type="text" id="new-emp-role" placeholder="Role (e.g. Barista, Cashier, Supervisor)" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+            <button onclick="addEmployee()" class="w-full bg-brand-accent text-white py-2.5 rounded-xl font-bold text-xs hover:bg-brand-accentHover transition">Save Employee</button>
+          </div>
+          <div class="col-span-2 bg-white rounded-2xl border border-brand-cardBorder p-5">
+            <table class="w-full text-left">
+              <thead>
+                <tr class="border-b text-brand-grayText text-xs">
+                  <th class="pb-3">Name</th>
+                  <th class="pb-3">Role</th>
+                  <th class="pb-3">Status</th>
+                  <th class="pb-3">Action</th>
+                </tr>
+              </thead>
+              <tbody id="employee-table" class="divide-y text-xs"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-settings" class="hidden flex-1 p-6 overflow-y-auto">
+        <h1 class="text-2xl font-bold text-gray-900 mb-1">Store Settings & Business Profile</h1>
+        <p class="text-xs text-brand-grayText mb-5">Customize business branding and receipt configurations</p>
+        <div class="bg-white p-5 rounded-2xl border border-brand-cardBorder max-w-md space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-brand-grayText mb-1">Custom Business Name</label>
+            <input type="text" id="setting-shop-name" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-brand-grayText mb-1">Business Logo</label>
+            <input type="file" id="setting-shop-logo" accept="image/*" class="w-full text-xs text-brand-grayText">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-brand-grayText mb-1">Custom Payment Options (Comma Separated)</label>
+            <input type="text" id="setting-payment-methods" placeholder="Cash, Card, GCash, Maya" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-brand-grayText mb-1">Receipt Note</label>
+            <input type="text" id="setting-receipt-note" class="w-full p-2.5 bg-brand-mutedBg rounded-xl text-xs border-none outline-none">
+          </div>
+          <button onclick="saveSettings()" class="bg-brand-accent text-white px-4 py-2.5 rounded-xl font-bold text-xs hover:bg-brand-accentHover transition">Save Store Profile</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="receipt-modal" class="fixed inset-0 bg-black/40 hidden flex items-center justify-center p-4 z-50">
+    <div id="receipt-modal-content" class="bg-white p-6 rounded-2xl w-80 shadow-2xl font-mono text-xs">
+      <div class="text-center border-b border-dashed border-gray-300 pb-3 mb-3">
+        <div id="receipt-logo-preview" class="flex justify-center mb-1"></div>
+        <h3 class="font-bold text-base text-gray-900" id="receipt-header-name">MY COFFEE SHOP</h3>
+        <p class="text-[10px] text-gray-500" id="receipt-date"></p>
+        <p class="text-[10px] text-gray-500">Cashier: <span id="receipt-cashier">Admin</span></p>
+      </div>
+      <div id="receipt-items" class="space-y-1.5 mb-3"></div>
+      <div class="border-t border-dashed border-gray-300 pt-2 space-y-1">
+        <div class="flex justify-between text-[11px]"><span>Payment Method:</span><span id="receipt-method">Cash</span></div>
+        <div class="flex justify-between font-bold text-sm pt-1"><span>TOTAL:</span><span id="receipt-total">₱0.00</span></div>
+      </div>
+      <div class="text-center mt-4 border-t border-dashed border-gray-300 pt-3">
+        <p class="text-[10px] text-gray-500" id="receipt-footer">Thank you for visiting!</p>
+      </div>
+      <div class="mt-4 flex space-x-2 no-print">
+        <button onclick="window.print()" class="flex-1 bg-brand-accent text-white py-2 rounded-xl font-sans text-xs font-bold hover:bg-brand-accentHover">Print Receipt</button>
+        <button onclick="closeReceipt()" class="flex-1 bg-gray-200 text-gray-800 py-2 rounded-xl font-sans text-xs font-bold hover:bg-gray-300">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const defaultSettings = { 
+      name: "My Coffee Shop", 
+      logo: "", 
+      receiptNote: "Thank you for visiting!",
+      paymentMethods: ["Cash", "Card", "GCash"] 
+    };
+
+    const defaultProducts = [
+      { id: 1, name: "Americano", category: "Coffee", price: 110, stock: 100, logo: "", features: "Hot/Iced, Sugar Free" },
+      { id: 2, name: "Cafe Latte", category: "Coffee", price: 130, stock: 85, logo: "", features: "Oat Milk, Extra Shot" },
+      { id: 3, name: "Caramel Macchiato", category: "Coffee", price: 170, stock: 90, logo: "", features: "Extra Drizzle" },
+      { id: 4, name: "Banana Smoothie", category: "Shake", price: 120, stock: 50, logo: "", features: "Less Sweet" }
+    ];
+
+    const defaultInventory = [
+      { id: 101, name: "Espresso Beans", stock: 15, unit: "kg" },
+      { id: 102, name: "Fresh Milk", stock: 24, unit: "Liters" }
+    ];
+
+    const defaultEmployees = [
+      { id: 1, name: "Maria Santos", role: "Manager", active: true },
+      { id: 2, name: "Juan Cruz", role: "Barista", active: false }
+    ];
+
+    let storeSettings = JSON.parse(localStorage.getItem("pos_offline_settings")) || defaultSettings;
+    let products = JSON.parse(localStorage.getItem("pos_offline_products")) || defaultProducts;
+    let inventory = JSON.parse(localStorage.getItem("pos_offline_inventory")) || defaultInventory;
+    let employees = JSON.parse(localStorage.getItem("pos_offline_employees")) || defaultEmployees;
+    let salesHistory = JSON.parse(localStorage.getItem("pos_offline_sales")) || [];
+
+    let currentCategory = "All";
+    let selectedPayment = (storeSettings.paymentMethods && storeSettings.paymentMethods[0]) ? storeSettings.paymentMethods[0] : "Cash";
+    let cart = [];
+
+    function saveData() {
+      localStorage.setItem("pos_offline_settings", JSON.stringify(storeSettings));
+      localStorage.setItem("pos_offline_products", JSON.stringify(products));
+      localStorage.setItem("pos_offline_inventory", JSON.stringify(inventory));
+      localStorage.setItem("pos_offline_employees", JSON.stringify(employees));
+      localStorage.setItem("pos_offline_sales", JSON.stringify(salesHistory));
+    }
+
+    function switchTab(tab) {
+      ['pos', 'history', 'inventory', 'products', 'analytics', 'employees', 'settings'].forEach(v => {
+        const el = document.getElementById(`view-${v}`);
+        if (el) el.classList.add('hidden');
+      });
+      document.getElementById(`view-${tab}`).classList.remove('hidden');
+
+      if (tab === 'history') renderHistory();
+      if (tab === 'inventory') renderInventory();
+      if (tab === 'products') renderProductsTable();
+      if (tab === 'analytics') renderAnalytics();
+      if (tab === 'employees') renderEmployees();
+      if (tab === 'settings') loadSettingsForm();
+    }
+
+    function getActiveCashier() {
+      const active = employees.find(e => e.active);
+      return active ? active.name : "Admin";
+    }
+
+    function renderHeaderBranding() {
+      document.getElementById("header-shop-name").innerText = storeSettings.name;
+      const logoContainer = document.getElementById("shop-logo-container");
+      if (storeSettings.logo) {
+        logoContainer.innerHTML = `<img src="${storeSettings.logo}" class="w-full h-full object-cover">`;
+      } else {
+        logoContainer.innerText = "☕";
+      }
+      document.getElementById("active-cashier-label").innerText = getActiveCashier();
+    }
+
+    function renderPaymentButtons() {
+      const container = document.getElementById("payment-options-container");
+      if (!storeSettings.paymentMethods || storeSettings.paymentMethods.length === 0) {
+        storeSettings.paymentMethods = ["Cash", "Card", "GCash"];
+      }
+      container.innerHTML = storeSettings.paymentMethods.map(m => `
+        <button onclick="setPaymentMethod('${m}')" class="py-1.5 px-2 rounded-xl text-xs font-semibold transition ${
+          selectedPayment === m ? 'bg-brand-accent text-white shadow-sm' : 'bg-brand-pill text-gray-700 hover:bg-brand-mutedBg'
+        }">
+          ${m}
+        </button>
+      `).join('');
+    }
+
+    function setPaymentMethod(method) {
+      selectedPayment = method;
+      renderPaymentButtons();
+    }
+
+    function renderCategories() {
+      const cats = ['All', ...new Set(products.map(p => p.category))];
+      const bar = document.getElementById("category-bar");
+      bar.innerHTML = cats.map(c => `
+        <button onclick="filterCategory('${c}')" class="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition ${
+          currentCategory.toLowerCase() === c.toLowerCase() ? 'bg-brand-accent text-white shadow-sm' : 'bg-brand-pill text-gray-700 hover:bg-brand-mutedBg'
+        }">
+          ${c}
+        </button>
+      `).join('');
+    }
+
+    function filterCategory(cat) {
+      currentCategory = cat;
+      renderCategories();
+      handleSearch();
+    }
+
+    function handleSearch() {
+      const query = document.getElementById("search-input").value.toLowerCase();
+      let filtered = products;
+
+      if (currentCategory !== 'All') {
+        filtered = filtered.filter(p => p.category.toLowerCase() === currentCategory.toLowerCase());
+      }
+      if (query.trim() !== '') {
+        filtered = filtered.filter(p => p.name.toLowerCase().includes(query));
+      }
+      renderProductGrid(filtered);
+    }
+
+    function renderProductGrid(items) {
+      const grid = document.getElementById("item-grid");
+      if (items.length === 0) {
+        grid.innerHTML = `<div class="col-span-3 text-center py-10 text-brand-grayText text-xs">No products available.</div>`;
+        return;
+      }
+
+      grid.innerHTML = items.map(p => {
+        const isOutOfStock = p.stock <= 0;
+        return `
+          <div class="bg-white border border-brand-cardBorder rounded-2xl p-4 flex flex-col justify-between h-48 shadow-sm hover:shadow transition relative">
+            <div>
+              <div class="w-12 h-12 rounded-full bg-brand-mutedBg flex items-center justify-center text-xl mb-2 overflow-hidden">
+                ${p.logo ? `<img src="${p.logo}" class="w-full h-full object-cover">` : '☕'}
+              </div>
+              <h3 class="font-bold text-sm text-gray-900 leading-tight">${p.name}</h3>
+              <p class="text-[11px] text-brand-grayText font-medium mt-0.5">${p.category}</p>
+              ${p.features ? `<p class="text-[10px] text-brand-accent mt-1 italic">${p.features}</p>` : ''}
+            </div>
+
+            <div class="flex items-end justify-between mt-2">
+              <div>
+                <span class="text-sm font-bold text-gray-900">₱${parseFloat(p.price).toFixed(2)}</span>
+                <span class="block text-[10px] ${isOutOfStock ? 'text-red-500 font-semibold' : 'text-brand-grayText'}">
+                  ${isOutOfStock ? 'Out of stock' : `${p.stock} available`}
+                </span>
+              </div>
+
+              <button onclick="addToCart(${p.id})" ${isOutOfStock ? 'disabled' : ''} class="w-8 h-8 rounded-full ${isOutOfStock ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-brand-accent text-white hover:bg-brand-accentHover'} flex items-center justify-center text-lg font-bold shadow-sm transition">
+                +
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function addToCart(id) {
+      const prod = products.find(p => p.id === id);
+      if (!prod || prod.stock <= 0) return;
+
+      const existing = cart.find(i => i.id === id);
+      if (existing) {
+        if (existing.qty < prod.stock) existing.qty += 1;
+      } else {
+        cart.push({ ...prod, qty: 1 });
+      }
+      updateCartUI();
+    }
+
+    function updateCartUI() {
+      const list = document.getElementById("cart-list");
+      const btnProcess = document.getElementById("btn-process");
+
+      if (cart.length === 0) {
+        list.innerHTML = `
+          <div class="h-full flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl py-12">
+            <span class="text-xs text-brand-grayText font-medium">No items selected</span>
+          </div>
+        `;
+        document.getElementById("subtotal").innerText = "₱0.00";
+        document.getElementById("total").innerText = "₱0.00";
+
+        btnProcess.disabled = true;
+        btnProcess.className = "w-full bg-brand-mutedBg text-brand-grayText font-bold py-3 rounded-xl transition text-xs shadow-none cursor-not-allowed";
+        return;
+      }
+
+      let subtotal = 0;
+      list.innerHTML = cart.map(i => {
+        const itemTotal = i.price * i.qty;
+        subtotal += itemTotal;
+        return `
+          <div class="flex justify-between items-center bg-brand-bg p-2.5 rounded-xl text-xs border border-brand-cardBorder">
+            <div class="flex-1">
+              <h4 class="font-bold text-gray-900">${i.name}</h4>
+              <span class="text-[10px] text-brand-grayText">₱${i.price.toFixed(2)} x ${i.qty}</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="font-bold text-gray-900">₱${itemTotal.toFixed(2)}</span>
+              <button onclick="removeFromCart(${i.id})" class="text-red-500 font-bold">✕</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById("subtotal").innerText = `₱${subtotal.toFixed(2)}`;
+      document.getElementById("total").innerText = `₱${subtotal.toFixed(2)}`;
+
+      btnProcess.disabled = false;
+      btnProcess.className = "w-full bg-brand-accent text-white font-bold py-3 rounded-xl transition text-xs shadow-md hover:bg-brand-accentHover cursor-pointer";
+    }
+
+    function removeFromCart(id) {
+      cart = cart.filter(i => i.id !== id);
+      updateCartUI();
+    }
+
+    function clearCart() {
+      cart = [];
+      updateCartUI();
+    }
+
+    function checkout() {
+      if (cart.length === 0) return;
+
+      const total = cart.reduce((sum, i) => sum + (i.price * i.qty), 0);
+      const totalItems = cart.reduce((sum, i) => sum + i.qty, 0);
+
+      cart.forEach(ci => {
+        const p = products.find(item => item.id === ci.id);
+        if (p) p.stock = Math.max(0, p.stock - ci.qty);
+      });
+
+      const newTxn = {
+        id: `TXN-${Date.now()}`,
+        cashier: getActiveCashier(),
+        items: totalItems,
+        total: total,
+        payment: selectedPayment,
+        status: "Completed",
+        date: new Date().toLocaleString()
+      };
+
+      salesHistory.unshift(newTxn);
+      saveData();
+
+      document.getElementById("receipt-header-name").innerText = storeSettings.name.toUpperCase();
+      document.getElementById("receipt-date").innerText = newTxn.date;
+      document.getElementById("receipt-cashier").innerText = newTxn.cashier;
+      document.getElementById("receipt-method").innerText = newTxn.payment;
+      document.getElementById("receipt-total").innerText = `₱${total.toFixed(2)}`;
+      document.getElementById("receipt-footer").innerText = storeSettings.receiptNote;
+
+      const logoPreview = document.getElementById("receipt-logo-preview");
+      logoPreview.innerHTML = storeSettings.logo ? `<img src="${storeSettings.logo}" class="h-10 w-10 object-contain">` : '';
+
+      document.getElementById("receipt-items").innerHTML = cart.map(i => `
+        <div class="flex justify-between text-xs">
+          <span>${i.qty}x ${i.name}</span>
+          <span>₱${(i.price * i.qty).toFixed(2)}</span>
+        </div>
+      `).join('');
+
+      document.getElementById("receipt-modal").classList.remove("hidden");
+      renderProductGrid(products);
+    }
+
+    function closeReceipt() {
+      document.getElementById("receipt-modal").classList.add("hidden");
+      clearCart();
+    }
+
+    function renderHistory() {
+      const tbody = document.getElementById("history-table");
+      if (salesHistory.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-10 text-brand-grayText">No transactions recorded.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = salesHistory.map(h => `
+        <tr class="hover:bg-gray-50 transition">
+          <td class="p-3.5 pl-5 font-mono text-gray-700">${h.id}</td>
+          <td class="p-3.5 font-medium text-gray-800">${h.cashier}</td>
+          <td class="p-3.5 font-medium">${h.items}</td>
+          <td class="p-3.5 font-bold text-gray-900">₱${parseFloat(h.total).toFixed(2)}</td>
+          <td class="p-3.5 text-gray-600">${h.payment}</td>
+          <td class="p-3.5">
+            <span class="bg-brand-badgeGreen text-brand-badgeGreenText text-[10px] font-bold px-2.5 py-1 rounded-full">${h.status}</span>
+          </td>
+          <td class="p-3.5 text-gray-500 text-[11px]">${h.date}</td>
+          <td class="p-3.5 pr-5">
+            <button onclick="deleteSingleTransaction('${h.id}')" class="text-red-500 font-bold hover:underline">Delete</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function clearAllTransactions() {
+      if (confirm("Are you sure you want to clear ALL sales transactions?")) {
+        salesHistory = [];
+        saveData();
+        renderHistory();
+        renderAnalytics();
+      }
+    }
+
+    function deleteSingleTransaction(id) {
+      if (confirm(`Delete transaction ${id}?`)) {
+        salesHistory = salesHistory.filter(h => h.id !== id);
+        saveData();
+        renderHistory();
+        renderAnalytics();
+      }
+    }
+
+    function renderInventory() {
+      const tbody = document.getElementById("inventory-table");
+      tbody.innerHTML = inventory.map(i => `
+        <tr>
+          <td class="py-3 font-semibold text-gray-800">${i.name}</td>
+          <td class="py-3">${i.stock}</td>
+          <td class="py-3 text-brand-grayText">${i.unit}</td>
+          <td class="py-3">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${i.stock < 5 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'}">
+              ${i.stock < 5 ? 'Low Stock' : 'Optimal'}
+            </span>
+          </td>
+          <td class="py-3"><button onclick="deleteInventoryItem(${i.id})" class="text-red-500 font-bold hover:underline">Delete</button></td>
+        </tr>
+      `).join('');
+    }
+
+    function addInventoryItem() {
+      const name = document.getElementById("new-inv-name").value;
+      const stock = parseFloat(document.getElementById("new-inv-stock").value);
+      const unit = document.getElementById("new-inv-unit").value;
+
+      if (!name || isNaN(stock)) return alert("Please fill inventory fields.");
+      inventory.push({ id: Date.now(), name, stock, unit });
+      saveData();
+      renderInventory();
+    }
+
+    function deleteInventoryItem(id) {
+      inventory = inventory.filter(i => i.id !== id);
+      saveData();
+      renderInventory();
+    }
+
+    function renderProductsTable() {
+      const tbody = document.getElementById("products-table");
+      tbody.innerHTML = products.map(p => `
+        <tr>
+          <td class="py-3 font-semibold text-gray-800">${p.name}</td>
+          <td class="py-3 text-brand-grayText">${p.category}</td>
+          <td class="py-3 font-bold">₱${parseFloat(p.price).toFixed(2)}</td>
+          <td class="py-3">${p.stock}</td>
+          <td class="py-3 text-brand-grayText text-[11px]">${p.features || 'N/A'}</td>
+          <td class="py-3"><button onclick="deleteProduct(${p.id})" class="text-red-500 font-bold hover:underline">Delete</button></td>
+        </tr>
+      `).join('');
+    }
+
+    function addProduct() {
+      const name = document.getElementById("new-prod-name").value;
+      const price = parseFloat(document.getElementById("new-prod-price").value);
+      const category = document.getElementById("new-prod-cat").value || "Coffee";
+      const stock = parseInt(document.getElementById("new-prod-stock").value) || 100;
+      const features = document.getElementById("new-prod-features").value;
+      const fileInput = document.getElementById("new-prod-logo");
+
+      if (!name || isNaN(price)) return alert("Please enter product name and price.");
+
+      const save = (logoUrl) => {
+        products.push({ id: Date.now(), name, price, category, stock, features, logo: logoUrl });
+        saveData();
+        renderProductsTable();
+        renderCategories();
+        renderProductGrid(products);
+      };
+
+      if (fileInput.files && fileInput.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) { save(e.target.result); };
+        reader.readAsDataURL(fileInput.files[0]);
+      } else {
+        save("");
+      }
+    }
+
+    function deleteProduct(id) {
+      products = products.filter(p => p.id !== id);
+      saveData();
+      renderProductsTable();
+      renderProductGrid(products);
+    }
+
+    function renderAnalytics() {
+      const totalRev = salesHistory.reduce((sum, h) => sum + h.total, 0);
+      const totalOrd = salesHistory.length;
+      const avg = totalOrd > 0 ? totalRev / totalOrd : 0;
+
+      document.getElementById("stat-total-revenue").innerText = `₱${totalRev.toFixed(2)}`;
+      document.getElementById("stat-total-orders").innerText = totalOrd;
+      document.getElementById("stat-avg-order").innerText = `₱${avg.toFixed(2)}`;
+    }
+
+    function exportToExcel() {
+      if (typeof XLSX === 'undefined') {
+        alert("Excel export requires an internet connection to load the XLSX library. Make sure you are connected to export Excel spreadsheets.");
+        return;
+      }
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(products), "Products");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventory), "Inventory");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(salesHistory), "Sales History");
+      XLSX.writeFile(wb, "Coffee_Shop_POS_Data.xlsx");
+    }
+
+    function backupAllData() {
+      const backupData = {
+        storeSettings,
+        products,
+        inventory,
+        employees,
+        salesHistory
+      };
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `POS_Backup_${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+    }
+
+    function restoreAllData(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (data.storeSettings) storeSettings = data.storeSettings;
+          if (data.products) products = data.products;
+          if (data.inventory) inventory = data.inventory;
+          if (data.employees) employees = data.employees;
+          if (data.salesHistory) salesHistory = data.salesHistory;
+
+          saveData();
+          renderHeaderBranding();
+          renderPaymentButtons();
+          renderCategories();
+          renderProductGrid(products);
+          alert("Backup successfully restored!");
+        } catch (err) {
+          alert("Invalid backup file selected.");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function renderEmployees() {
+      const tbody = document.getElementById("employee-table");
+      tbody.innerHTML = employees.map(e => `
+        <tr>
+          <td class="py-3 font-semibold text-gray-800">${e.name}</td>
+          <td class="py-3 text-brand-grayText">${e.role}</td>
+          <td class="py-3">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${e.active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}">
+              ${e.active ? 'Active Cashier' : 'Offline'}
+            </span>
+          </td>
+          <td class="py-3 space-x-2">
+            <button onclick="setActiveEmployee(${e.id})" class="text-brand-accent font-bold hover:underline">Set Active</button>
+            <button onclick="deleteEmployee(${e.id})" class="text-red-500 font-bold hover:underline">Delete</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function addEmployee() {
+      const name = document.getElementById("new-emp-name").value;
+      const role = document.getElementById("new-emp-role").value || "Cashier";
+      if (!name) return;
+      employees.push({ id: Date.now(), name, role, active: false });
+      saveData();
+      renderEmployees();
+    }
+
+    function setActiveEmployee(id) {
+      employees.forEach(e => e.active = (e.id === id));
+      saveData();
+      renderEmployees();
+      renderHeaderBranding();
+    }
+
+    function deleteEmployee(id) {
+      employees = employees.filter(e => e.id !== id);
+      saveData();
+      renderEmployees();
+    }
+
+    function loadSettingsForm() {
+      document.getElementById("setting-shop-name").value = storeSettings.name;
+      document.getElementById("setting-receipt-note").value = storeSettings.receiptNote;
+      document.getElementById("setting-payment-methods").value = storeSettings.paymentMethods ? storeSettings.paymentMethods.join(", ") : "";
+    }
+
+    function saveSettings() {
+      storeSettings.name = document.getElementById("setting-shop-name").value || "My Coffee Shop";
+      storeSettings.receiptNote = document.getElementById("setting-receipt-note").value || "Thank you!";
+      
+      const rawPayments = document.getElementById("setting-payment-methods").value;
+      if (rawPayments.trim()) {
+        storeSettings.paymentMethods = rawPayments.split(",").map(p => p.trim()).filter(Boolean);
+      }
+
+      const fileInput = document.getElementById("setting-shop-logo");
+      if (fileInput.files && fileInput.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          storeSettings.logo = e.target.result;
+          saveData();
+          renderHeaderBranding();
+          renderPaymentButtons();
+          alert("Settings saved!");
+        };
+        reader.readAsDataURL(fileInput.files[0]);
+      } else {
+        saveData();
+        renderHeaderBranding();
+        renderPaymentButtons();
+        alert("Settings saved!");
+      }
+    }
+
+    function updateLiveTime() {
+      const now = new Date();
+      document.getElementById("live-time").innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // INITIALIZATION
+    setInterval(updateLiveTime, 1000);
+    updateLiveTime();
+    renderHeaderBranding();
+    renderPaymentButtons();
+    renderCategories();
+    renderProductGrid(products);
+  </script>
+</body>
+</html>
